@@ -196,18 +196,18 @@ impl Extensions {
             }),
             -100,
         );
-        new.add_package(
-            Box::new(|mut response, _, _| {
-                let response: &mut Response<()> = unsafe { response.get_inner() };
-                response
-                    .headers_mut()
-                    .entry("referrer-policy")
-                    .or_insert(HeaderValue::from_static("no-referrer"));
+        // new.add_package(
+            // Box::new(|mut response, _, _| {
+                // let response: &mut Response<()> = unsafe { response.get_inner() };
+                // response
+                    // .headers_mut()
+                    // .entry("referrer-policy")
+                    // .or_insert(HeaderValue::from_static("no-referrer"));
 
-                ready(())
-            }),
-            10,
-        );
+                // ready(())
+            // }),
+            // 10,
+        // );
 
         new
     }

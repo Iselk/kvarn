@@ -310,7 +310,7 @@ pub async fn handle_connection(
             LimitStrength::Passed => {}
         }
         let host = descriptors.data.smart_get(&request, hostname.as_deref());
-        debug!("Accepting new connection from {} on {}", address, host.name);
+        debug!("Accepting new request from {} on {}", address, host.name);
         // fn to handle getting from cache, generating response and sending it
         handle_cache(request, address, SendKind::Send(&mut response_pipe), host).await?;
 
@@ -340,7 +340,7 @@ impl<'a> SendKind<'a> {
     pub fn ensure_version_and_length<T>(&self, response: &mut Response<T>, len: usize) {
         match self {
             Self::Send(p) => p.ensure_version_and_length(response, len),
-            Self::Push(p) => p.ensure_version(response),
+            Self::Push(p) => p.ensure_version_and_length(response, len),
         }
     }
     #[inline]
@@ -372,6 +372,11 @@ impl<'a> SendKind<'a> {
 
         match self {
             SendKind::Send(response_pipe) => {
+                // Process post extensions
+                host.extensions
+                    .resolve_post(&request, identity_body, response_pipe, address, host)
+                    .await;
+
                 // Send response
                 let mut body_pipe =
                     ret_log_app_error!(response_pipe.send_response(response, false).await);
@@ -389,11 +394,6 @@ impl<'a> SendKind<'a> {
                     .await;
                 }
 
-                // Process post extensions
-                host.extensions
-                    .resolve_post(&request, identity_body, response_pipe, address, host)
-                    .await;
-
                 // Close the pipe.
                 ret_log_app_error!(body_pipe.close().await);
             }
@@ -408,7 +408,7 @@ impl<'a> SendKind<'a> {
                     // Send body
                     ret_log_app_error!(
                         body_pipe
-                            .send_with_maybe_close(body, future.is_none())
+                            .send_with_maybe_close(body, false && future.is_none())
                             .await
                     );
                 }
@@ -419,6 +419,7 @@ impl<'a> SendKind<'a> {
                     )
                     .await;
                 }
+                ret_log_app_error!(body_pipe.close().await);
 
                 if !send_body {
                     ret_log_app_error!(body_pipe.close().await);

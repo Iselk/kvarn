@@ -171,7 +171,11 @@ impl HttpConnection {
                 Ok(Self::Http1(Arc::new(Mutex::new(stream))))
             }
             #[cfg(feature = "h2")]
-            Version::HTTP_2 => match h2::server::handshake(stream).await {
+            Version::HTTP_2 => match h2::server::Builder::new()
+                .max_concurrent_streams(250)
+                .handshake(stream)
+                .await
+            {
                 Ok(connection) => Ok(HttpConnection::Http2(Box::new(connection))),
                 Err(err) => Err(Error::H2(err)),
             },
@@ -446,6 +450,8 @@ mod response {
             &mut self,
             #[allow(unused_variables)] request: Request<()>,
         ) -> Result<PushedResponsePipe, Error> {
+            let mut request = request;
+            utility::remove_all_headers(request.headers_mut(), "accept-encoding");
             match self {
                 Self::Http1(_) => Err(Error::PushOnHttp1),
                 #[cfg(feature = "h2")]
@@ -458,6 +464,12 @@ mod response {
         /// Ensures the version and length of the `response` using the variant of [`ResponsePipe`].
         #[inline]
         pub fn ensure_version_and_length<T>(&self, response: &mut Response<T>, len: usize) {
+            utility::set_content_length(response.headers_mut(), len);
+            utility::remove_all_headers(response.headers_mut(), "cache-control");
+            // utility::remove_all_headers(response.headers_mut(), "content-encoding");
+            utility::remove_all_headers(response.headers_mut(), "referrer-policy");
+            utility::remove_all_headers(response.headers_mut(), "content-encoding");
+            utility::remove_all_headers(response.headers_mut(), "server");
             match self {
                 Self::Http1(_) => match response.version() {
                     Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 => {
@@ -491,6 +503,8 @@ mod response {
                     let mut response = response;
                     *response.version_mut() = Version::HTTP_2;
 
+                    utility::remove_all_headers(response.headers_mut(), "accept-encoding");
+
                     match s.send_response(response, end_of_stream) {
                         Err(err) => Err(Error::H2(err)),
                         Ok(pipe) => Ok(ResponseBodyPipe::Http2(pipe)),
@@ -503,7 +517,13 @@ mod response {
         /// Ensures the version of `response` depending on inner version if [`PushedResponsePipe`].
         #[inline]
         #[allow(unused_variables)]
-        pub fn ensure_version<T>(&self, response: &mut Response<T>) {
+        pub fn ensure_version_and_length<T>(&self, response: &mut Response<T>, len: usize) {
+            utility::set_content_length(response.headers_mut(), len);
+            utility::remove_all_headers(response.headers_mut(), "cache-control");
+            // utility::remove_all_headers(response.headers_mut(), "content-encoding");
+            utility::remove_all_headers(response.headers_mut(), "referrer-policy");
+            utility::remove_all_headers(response.headers_mut(), "content-encoding");
+            utility::remove_all_headers(response.headers_mut(), "server");
             match self {
                 #[cfg(feature = "h2")]
                 Self::Http2(_) => *response.version_mut() = Version::HTTP_2,
